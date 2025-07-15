@@ -36,6 +36,7 @@ use solana_sdk::signature::{Keypair, Signer};
 use solana_sdk::transaction::Transaction;
 use spl_token::instruction as token_instruction;
 use warp::Filter;
+use bytemuck::cast;
 
 use serum_common::client::rpc::{
     create_and_init_mint, create_token_account, mint_to_new_account, send_txn, simulate_transaction,
@@ -447,26 +448,14 @@ fn get_keys_for_market<'a>(
         transmute_to_bytes(&identity(market_state.own_address)),
         market.as_ref()
     );
-    Ok(MarketPubkeys {
+    Ok(MarketPubkeys { // using new_from_array instead of new to avoid the need for a const constructor
         market: Box::new(*market),
-        req_q: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.req_q,
-        )))),
-        event_q: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.event_q,
-        )))),
-        bids: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.bids,
-        )))),
-        asks: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.asks,
-        )))),
-        coin_vault: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.coin_vault,
-        )))),
-        pc_vault: Box::new(Pubkey::new(transmute_one_to_bytes(&identity(
-            market_state.pc_vault,
-        )))),
+        req_q: Box::new(Pubkey::new_from_array(cast(identity(market_state.req_q)))),
+        event_q: Box::new(Pubkey::new_from_array(cast(identity(market_state.event_q)))),
+        bids: Box::new(Pubkey::new_from_array(cast(identity(market_state.bids)))),
+        asks: Box::new(Pubkey::new_from_array(cast(identity(market_state.asks)))),
+        coin_vault: Box::new(Pubkey::new_from_array(cast(identity(market_state.coin_vault)))),
+        pc_vault: Box::new(Pubkey::new_from_array(cast(identity(market_state.pc_vault)))),
         vault_signer_key: Box::new(vault_signer_key),
     })
 }
@@ -618,7 +607,7 @@ fn consume_events_loop(
 
             let mut account_metas = Vec::with_capacity(orders_accounts.len() + 4);
             for pubkey_words in orders_accounts {
-                let pubkey = Pubkey::new(transmute_to_bytes(&pubkey_words));
+                let pubkey = Pubkey::new_from_array(cast(pubkey_words));
                 account_metas.push(AccountMeta::new(pubkey, false));
             }
             for pubkey in [
@@ -803,7 +792,7 @@ pub fn consume_events_instruction(
 
     let mut account_metas = Vec::with_capacity(orders_accounts.len() + 4);
     for pubkey_words in orders_accounts {
-        let pubkey = Pubkey::new(transmute_to_bytes(&pubkey_words));
+        let pubkey = Pubkey::new_from_array(cast(pubkey_words));
         account_metas.push(AccountMeta::new(pubkey, false));
     }
     for pubkey in [&state.market, &state.event_q, coin_wallet, pc_wallet].iter() {

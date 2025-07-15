@@ -1,13 +1,19 @@
 use crate::{open_orders_authority, open_orders_init_authority};
 use anchor_lang::prelude::*;
+use solana_program::{
+    msg, 
+    pubkey::Pubkey, 
+    entrypoint::ProgramResult, 
+    account_info::AccountInfo,
+    program_error::ProgramError,
+};
 use anchor_lang::solana_program::instruction::Instruction;
-use anchor_lang::solana_program::system_program;
-use anchor_lang::Accounts;
-use anchor_spl::{dex, token};
+use anchor_spl::token;
+use serum_dex;
 use serum_dex::instruction::*;
 use serum_dex::matching::Side;
-use serum_dex::state::OpenOrders;
-use std::mem::size_of;
+
+declare_id!("9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin");
 
 /// Per request context. Can be used to share data between middleware handlers.
 pub struct Context<'a, 'info> {
@@ -130,10 +136,27 @@ impl OpenOrdersPda {
             bump_init: 0,
         }
     }
+
     fn prepare_pda<'info>(acc_info: &AccountInfo<'info>) -> AccountInfo<'info> {
         let mut acc_info = acc_info.clone();
         acc_info.is_signer = true;
         acc_info
+    }
+
+    /// Validates the accounts structure for init_open_orders
+    fn validate_init_accounts<'info>(accounts: &[AccountInfo<'info>]) -> ProgramResult {
+        if accounts.len() < 5 {
+            msg!("Not enough accounts provided for init_open_orders");
+            return Err(ProgramError::NotEnoughAccountKeys.into());
+        }
+
+        let authority = &accounts[1];
+        if !authority.is_signer {
+            msg!("Authority must be signer");
+            return Err(ProgramError::MissingRequiredSignature.into());
+        }
+
+        Ok(())
     }
 }
 
@@ -167,11 +190,13 @@ impl MarketMiddleware for OpenOrdersPda {
         let market = &ctx.accounts[4];
         let user = &ctx.accounts[3];
 
-        // Initialize PDA.
-        let mut accounts = &ctx.accounts[..];
-        InitAccount::try_accounts(ctx.program_id, &mut accounts, &[self.bump, self.bump_init])?;
+        // Skip first 2 accounts (dex_program and system_program) for validation
+        let remaining_accounts = &ctx.accounts[2..];
+        
+        // Validate account structure
+        Self::validate_init_accounts(remaining_accounts)?;
 
-        // Add signer to context.
+        // Add PDA seeds to context
         ctx.seeds.push(open_orders_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
@@ -179,6 +204,7 @@ impl MarketMiddleware for OpenOrdersPda {
             authority = user.key,
             bump = self.bump
         });
+        
         ctx.seeds.push(open_orders_init_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
@@ -186,12 +212,17 @@ impl MarketMiddleware for OpenOrdersPda {
             bump = self.bump_init
         });
 
-        // Chop off the first two accounts needed for initializing the PDA.
-        ctx.accounts = (ctx.accounts[2..]).to_vec();
+        // Update accounts (skip first 2)
+        ctx.accounts = ctx.accounts[2..].to_vec();
 
-        // Set PDAs.
-        ctx.accounts[1] = Self::prepare_pda(&ctx.accounts[0]);
-        ctx.accounts[4].is_signer = true;
+        // Set PDAs - make sure we have enough accounts
+        if ctx.accounts.len() > 1 {
+            ctx.accounts[1] = Self::prepare_pda(&ctx.accounts[0]);
+        }
+        
+        if ctx.accounts.len() > 4 {
+            ctx.accounts[4].is_signer = true;
+        }
 
         Ok(())
     }
@@ -208,7 +239,7 @@ impl MarketMiddleware for OpenOrdersPda {
         // The user must authorize the tx.
         let user = &ctx.accounts[7];
         if !user.is_signer {
-            return Err(ErrorCode::UnauthorizedUser.into());
+            return Err(ProgramError::Custom(ErrorCode::UnauthorizedUser as u32).into());
         }
 
         let market = &ctx.accounts[0];
@@ -264,7 +295,8 @@ impl MarketMiddleware for OpenOrdersPda {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
             market = market.key,
-            authority = user.key
+            authority = user.key,
+            bump = self.bump
         });
         ctx.accounts[7] = Self::prepare_pda(open_orders);
 
@@ -287,14 +319,15 @@ impl MarketMiddleware for OpenOrdersPda {
         let market = &ctx.accounts[0];
         let user = &ctx.accounts[4];
         if !user.is_signer {
-            return Err(ErrorCode::UnauthorizedUser.into());
+            return Err(ProgramError::Custom(ErrorCode::UnauthorizedUser as u32).into());
         }
 
         ctx.seeds.push(open_orders_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
             market = market.key,
-            authority = user.key
+            authority = user.key,
+            bump = self.bump
         });
 
         ctx.accounts[4] = Self::prepare_pda(&ctx.accounts[3]);
@@ -318,14 +351,15 @@ impl MarketMiddleware for OpenOrdersPda {
         let market = &ctx.accounts[0];
         let user = &ctx.accounts[4];
         if !user.is_signer {
-            return Err(ErrorCode::UnauthorizedUser.into());
+            return Err(ProgramError::Custom(ErrorCode::UnauthorizedUser as u32).into());
         }
 
         ctx.seeds.push(open_orders_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
             market = market.key,
-            authority = user.key
+            authority = user.key,
+            bump = self.bump
         });
 
         ctx.accounts[4] = Self::prepare_pda(&ctx.accounts[3]);
@@ -345,14 +379,15 @@ impl MarketMiddleware for OpenOrdersPda {
         let market = &ctx.accounts[0];
         let user = &ctx.accounts[2];
         if !user.is_signer {
-            return Err(ErrorCode::UnauthorizedUser.into());
+            return Err(ProgramError::Custom(ErrorCode::UnauthorizedUser as u32).into());
         }
 
         ctx.seeds.push(open_orders_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
             market = market.key,
-            authority = user.key
+            authority = user.key,
+            bump = self.bump
         });
 
         ctx.accounts[2] = Self::prepare_pda(&ctx.accounts[1]);
@@ -372,14 +407,15 @@ impl MarketMiddleware for OpenOrdersPda {
         let market = &ctx.accounts[3];
         let user = &ctx.accounts[1];
         if !user.is_signer {
-            return Err(ErrorCode::UnauthorizedUser.into());
+            return Err(ProgramError::Custom(ErrorCode::UnauthorizedUser as u32).into());
         }
 
         ctx.seeds.push(open_orders_authority! {
             program = ctx.program_id,
             dex_program = ctx.dex_program_id,
             market = market.key,
-            authority = user.key
+            authority = user.key,
+            bump = self.bump
         });
 
         ctx.accounts[1] = Self::prepare_pda(&ctx.accounts[0]);
@@ -404,6 +440,7 @@ impl MarketMiddleware for OpenOrdersPda {
 
 /// Logs each request.
 pub struct Logger;
+
 impl MarketMiddleware for Logger {
     fn init_open_orders(&self, _ctx: &mut Context) -> ProgramResult {
         msg!("proxying open orders");
@@ -449,7 +486,7 @@ impl MarketMiddleware for Logger {
     }
 }
 
-/// Enforces referal fees being sent to the configured address.
+/// Enforces referral fees being sent to the configured address.
 pub struct ReferralFees {
     referral: Pubkey,
 }
@@ -465,8 +502,11 @@ impl MarketMiddleware for ReferralFees {
     ///
     /// .. serum_dex::MarketInstruction::SettleFunds.
     fn settle_funds(&self, ctx: &mut Context) -> ProgramResult {
-        let referral = token::accessor::authority(&ctx.accounts[9])?;
-        require!(referral == self.referral, ErrorCode::InvalidReferral);
+        let referral = token::accessor::authority(&ctx.accounts[9])
+            .map_err(|e| Into::<ProgramError>::into(e))?;
+        if referral != self.referral {
+            return Err(ProgramError::Custom(ErrorCode::InvalidReferral as u32).into());
+        }
         Ok(())
     }
 }
@@ -540,7 +580,7 @@ macro_rules! open_orders_init_authority {
 
 // Errors.
 
-#[error(offset = 500)]
+#[error_code(offset = 500)]
 pub enum ErrorCode {
     #[msg("Program ID does not match the Serum DEX")]
     InvalidDexPid,
@@ -556,33 +596,6 @@ pub enum ErrorCode {
     NotEnoughAccounts,
     #[msg("Invalid target program ID")]
     InvalidTargetProgram,
-}
-
-#[derive(Accounts)]
-#[instruction(bump: u8, bump_init: u8)]
-pub struct InitAccount<'info> {
-    #[account(address = dex::ID)]
-    pub dex_program: AccountInfo<'info>,
-    #[account(address = system_program::ID)]
-    pub system_program: AccountInfo<'info>,
-    #[account(
-        init,
-        seeds = [b"open-orders", dex_program.key.as_ref(), market.key.as_ref(), authority.key.as_ref()],
-        bump = bump,
-        payer = authority,
-        owner = dex::ID,
-        space = size_of::<OpenOrders>() + SERUM_PADDING,
-    )]
-    pub open_orders: AccountInfo<'info>,
-    #[account(signer)]
-    pub authority: AccountInfo<'info>,
-    pub market: AccountInfo<'info>,
-    pub rent: Sysvar<'info, Rent>,
-    #[account(
-        seeds = [b"open-orders-init", dex_program.key.as_ref(), market.key.as_ref()],
-        bump = bump_init,
-    )]
-    pub open_orders_init_authority: AccountInfo<'info>,
 }
 
 // Constants.

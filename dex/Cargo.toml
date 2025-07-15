@@ -16,10 +16,10 @@ default = ["program"]
 no-entrypoint = []
 
 [dependencies]
-anchor-lang = "0.31.0"
-solana-program = "=2.1.0"
+anchor-lang = "0.31.1"
+solana-program = "=2.3.0"
 solana-security-txt = "1.1.1"
-spl-token = { version = "=7.0.0", features = ["no-entrypoint"] }
+spl-token = { version = "8.0.0", features = ["no-entrypoint"] }
 serde = "1.0.150"
 itertools = "0.10.5"
 without-alloc = "0.2.2"
@@ -33,7 +33,7 @@ safe-transmute = "0.11.2"
 arbitrary = { version = "0.4.7", features = ["derive"], optional = true }
 num-traits = "0.2.15"
 arrayref = "0.3.6"
-bytemuck = "1.12.3"
+bytemuck = "1.23.1"
 byteorder = "1.4.3"
 default-env = "0.1.1"
 

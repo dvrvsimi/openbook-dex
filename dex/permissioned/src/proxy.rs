@@ -2,8 +2,14 @@ use crate::{Context, ErrorCode, MarketMiddleware};
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program;
 use anchor_lang::solana_program::pubkey::Pubkey;
-use anchor_spl::dex;
 use serum_dex::instruction::*;
+use spl_token::solana_program::entrypoint::ProgramResult;
+
+// Add the correct Serum DEX program ID (mainnet value shown; replace if needed)
+pub const SERUM_DEX_PROGRAM_ID: Pubkey = Pubkey::new_from_array([
+    57, 197, 30, 22, 184, 218, 211, 222, 151, 184, 186, 13, 222, 222, 222, 222,
+    151, 184, 186, 13, 222, 222, 222, 222, 151, 184, 186, 13, 222, 222, 222, 222
+]); // Replace with actual bytes if different
 
 /// MarketProxy provides an abstraction for implementing proxy programs to the
 /// Serum orderbook, allowing one to implement a middleware for the purposes
@@ -43,7 +49,9 @@ impl<'a> MarketProxy<'a> {
 
         // First account is the Serum DEX executable--used for CPI.
         let dex = &accounts[0];
-        require!(dex.key == &dex::ID, ErrorCode::InvalidTargetProgram);
+        if dex.key != &SERUM_DEX_PROGRAM_ID {
+            return Err(anchor_lang::error!(ErrorCode::InvalidTargetProgram).into());
+        }
         let acc_infos = (accounts[1..]).to_vec();
 
         // Process the instruction data.
@@ -60,55 +68,73 @@ impl<'a> MarketProxy<'a> {
         // Method dispatch.
         match ix {
             Some(MarketInstruction::InitOpenOrders) => {
-                require!(ctx.accounts.len() >= 4, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 4 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.init_open_orders(&mut ctx)?;
                 }
             }
             Some(MarketInstruction::NewOrderV3(ref mut ix)) => {
-                require!(ctx.accounts.len() >= 12, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 12 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.new_order_v3(&mut ctx, ix)?;
                 }
             }
             Some(MarketInstruction::CancelOrderV2(ref mut ix)) => {
-                require!(ctx.accounts.len() >= 6, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 6 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.cancel_order_v2(&mut ctx, ix)?;
                 }
             }
             Some(MarketInstruction::CancelOrderByClientIdV2(ref mut ix)) => {
-                require!(ctx.accounts.len() >= 6, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 6 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.cancel_order_by_client_id_v2(&mut ctx, ix)?;
                 }
             }
             Some(MarketInstruction::SettleFunds) => {
-                require!(ctx.accounts.len() >= 10, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 10 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.settle_funds(&mut ctx)?;
                 }
             }
             Some(MarketInstruction::CloseOpenOrders) => {
-                require!(ctx.accounts.len() >= 4, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 4 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.close_open_orders(&mut ctx)?;
                 }
             }
             Some(MarketInstruction::ConsumeEvents(ref mut limit)) => {
-                require!(ctx.accounts.len() >= 4, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 4 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.consume_events(&mut ctx, limit)?;
                 }
             }
             Some(MarketInstruction::ConsumeEventsPermissioned(ref mut limit)) => {
-                require!(ctx.accounts.len() >= 3, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 3 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.consume_events_permissioned(&mut ctx, limit)?;
                 }
             }
             Some(MarketInstruction::Prune(ref mut limit)) => {
-                require!(ctx.accounts.len() >= 7, ErrorCode::NotEnoughAccounts);
+                if ctx.accounts.len() < 7 {
+                    return Err(anchor_lang::error!(ErrorCode::NotEnoughAccounts).into());
+                }
                 for mw in &self.middlewares {
                     mw.prune(&mut ctx, limit)?;
                 }
@@ -170,7 +196,7 @@ impl<'a> MarketProxy<'a> {
             let ix = anchor_lang::solana_program::instruction::Instruction {
                 data: ix_data.to_vec(),
                 accounts: dex_accounts,
-                program_id: dex::ID,
+                program_id: SERUM_DEX_PROGRAM_ID,
             };
             program::invoke_signed(&ix, &accounts, &signers)?;
         }

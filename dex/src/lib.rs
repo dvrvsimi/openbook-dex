@@ -1,4 +1,3 @@
-#![deny(unaligned_references)]
 #![allow(clippy::try_err)]
 
 #[macro_use]
