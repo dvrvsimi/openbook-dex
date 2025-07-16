@@ -603,4 +603,78 @@ pub enum ErrorCode {
 // Padding added to every serum account.
 //
 // b"serum".len() + b"padding".len().
-const SERUM_PADDING: usize = 12;
+// const SERUM_PADDING: usize = 12;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_program::pubkey::Pubkey;
+    use solana_program::account_info::AccountInfo;
+    use solana_program::clock::Epoch;
+    use std::cell::RefCell;
+
+    fn dummy_account(key: Pubkey, is_signer: bool) -> AccountInfo {
+        let mut lamports = 0;
+        let mut data = vec![];
+        AccountInfo::new(
+            &key, is_signer, false, &mut lamports, &mut data, &Pubkey::default(), false, Epoch::default()
+        )
+    }
+
+    #[test]
+    fn test_instruction_parsing() {
+        let mut pda = OpenOrdersPda::new();
+        let mut data: &[u8] = &[0, 42, 99, 1, 2, 3];
+        pda.instruction(&mut data).unwrap();
+        assert_eq!(pda.bump, 42);
+        assert_eq!(pda.bump_init, 99);
+        assert_eq!(data, &[1, 2, 3]);
+    }
+
+    #[test]
+    fn test_init_open_orders_valid() {
+        let mut pda = OpenOrdersPda { bump: 1, bump_init: 2 };
+        let program_id = Pubkey::new_unique();
+        let dex_program_id = Pubkey::new_unique();
+        // Account 1 is signer
+        let accounts: Vec<_> = (0..6).map(|i| dummy_account(Pubkey::new_unique(), i == 1)).collect();
+        let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
+        assert!(pda.init_open_orders(&mut ctx).is_ok());
+        // Seeds should be set
+        assert_eq!(ctx.seeds.len(), 2);
+    }
+
+    #[test]
+    fn test_init_open_orders_missing_signer() {
+        let mut pda = OpenOrdersPda { bump: 1, bump_init: 2 };
+        let program_id = Pubkey::new_unique();
+        let dex_program_id = Pubkey::new_unique();
+        // No account is signer
+        let accounts: Vec<_> = (0..6).map(|_| dummy_account(Pubkey::new_unique(), false)).collect();
+        let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
+        assert!(pda.init_open_orders(&mut ctx).is_err());
+    }
+
+    #[test]
+    fn test_logger_hooks() {
+        let logger = Logger;
+        let program_id = Pubkey::new_unique();
+        let dex_program_id = Pubkey::new_unique();
+        let accounts: Vec<_> = (0..6).map(|i| dummy_account(Pubkey::new_unique(), i == 1)).collect();
+        let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
+        // Should not panic
+        assert!(logger.init_open_orders(&mut ctx).is_ok());
+        let mut ix = NewOrderInstructionV3 {
+            side: Side::Bid,
+            limit_price: 1u64.try_into().unwrap(),
+            max_coin_qty: 1u64.try_into().unwrap(),
+            max_native_pc_qty_including_fees: 1u64.try_into().unwrap(),
+            self_trade_behavior: serum_dex::instruction::SelfTradeBehavior::AbortTransaction,
+            order_type: serum_dex::matching::OrderType::Limit,
+            client_order_id: 0,
+            limit: 1,
+            max_ts: 0,
+        };
+        assert!(logger.new_order_v3(&mut ctx, &mut ix).is_ok());
+    }
+}

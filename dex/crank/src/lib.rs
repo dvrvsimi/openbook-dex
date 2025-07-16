@@ -1,4 +1,3 @@
-#![deny(unaligned_references)]
 #![allow(dead_code)]
 #![allow(clippy::too_many_arguments)]
 
@@ -16,10 +15,9 @@ use anyhow::{format_err, Result};
 use clap::Parser;
 use debug_print::debug_println;
 use log::{error, info};
-use rand::rngs::OsRng;
 use safe_transmute::{
     guard::SingleManyGuard,
-    to_bytes::{transmute_one_to_bytes, transmute_to_bytes},
+    to_bytes:: transmute_to_bytes,
     transmute_many, transmute_many_pedantic, transmute_one_pedantic,
 };
 use sloggers::file::FileLoggerBuilder;
@@ -812,11 +810,11 @@ pub fn consume_events_instruction(
 }
 
 fn whole_shebang(client: &RpcClient, program_id: &Pubkey, payer: &Keypair) -> Result<()> {
-    let coin_mint = Keypair::generate(&mut OsRng);
+    let coin_mint = Keypair::new();
     debug_println!("Coin mint: {}", coin_mint.pubkey());
     create_and_init_mint(client, payer, &coin_mint, &payer.pubkey(), 3)?;
 
-    let pc_mint = Keypair::generate(&mut OsRng);
+    let pc_mint = Keypair::new();
     debug_println!("Pc mint: {}", pc_mint.pubkey());
     create_and_init_mint(client, payer, &pc_mint, &payer.pubkey(), 3)?;
 
@@ -1396,7 +1394,7 @@ fn create_dex_account(
     unpadded_len: usize,
 ) -> Result<(Keypair, Instruction)> {
     let len = unpadded_len + 12;
-    let key = Keypair::generate(&mut OsRng);
+    let key = Keypair::new();
     let create_account_instr = solana_sdk::system_instruction::create_account(
         payer,
         &key.pubkey(),
@@ -1458,7 +1456,7 @@ fn create_account(
     owner_pubkey: &Pubkey,
     payer: &Keypair,
 ) -> Result<Keypair> {
-    let spl_account = Keypair::generate(&mut OsRng);
+    let spl_account = Keypair::new();
     let signers = vec![payer, &spl_account];
 
     let lamports = client.get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)?;
@@ -1526,7 +1524,7 @@ fn mint_to_existing_account(
 }
 
 fn initialize_token_account(client: &RpcClient, mint: &Pubkey, owner: &Keypair) -> Result<Keypair> {
-    let recip_keypair = Keypair::generate(&mut OsRng);
+    let recip_keypair = Keypair::new();
     let lamports = client.get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)?;
     let create_recip_instr = solana_sdk::system_instruction::create_account(
         &owner.pubkey(),

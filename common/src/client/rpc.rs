@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use rand::rngs::OsRng;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcSendTransactionConfig;
 use solana_client::rpc_request::RpcRequest;
@@ -19,7 +18,7 @@ pub fn create_account_rent_exempt(
     data_size: usize,
     owner: &Pubkey,
 ) -> Result<Keypair> {
-    let account = Keypair::generate(&mut OsRng);
+    let account = Keypair::new();
 
     let signers = [payer, &account];
 
@@ -54,7 +53,7 @@ pub fn create_token_account(
     owner_pubkey: &Pubkey,
     payer: &Keypair,
 ) -> Result<Keypair> {
-    let spl_account = Keypair::generate(&mut OsRng);
+    let spl_account = Keypair::new();
     let instructions = create_token_account_instructions(
         client,
         spl_account.pubkey(),
@@ -111,7 +110,7 @@ pub fn new_mint(
     owner_pubkey: &Pubkey,
     decimals: u8,
 ) -> Result<(Keypair, Signature)> {
-    let mint = Keypair::generate(&mut OsRng);
+    let mint = Keypair::new();
     let s = create_and_init_mint(client, payer_keypair, &mint, owner_pubkey, decimals)?;
     Ok((mint, s))
 }
@@ -161,7 +160,7 @@ pub fn mint_to_new_account(
     mint: &Pubkey,
     quantity: u64,
 ) -> Result<Keypair> {
-    let recip_keypair = Keypair::generate(&mut OsRng);
+    let recip_keypair = Keypair::new();
 
     let lamports = client.get_minimum_balance_for_rent_exemption(spl_token::state::Account::LEN)?;
 
