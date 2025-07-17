@@ -611,13 +611,22 @@ mod tests {
     use solana_program::pubkey::Pubkey;
     use solana_program::account_info::AccountInfo;
     use solana_program::clock::Epoch;
-    use std::cell::RefCell;
+    use std::convert::TryInto;
 
-    fn dummy_account(key: Pubkey, is_signer: bool) -> AccountInfo {
-        let mut lamports = 0;
-        let mut data = vec![];
+    fn dummy_account(is_signer: bool) -> AccountInfo<'static> {
+        let key = Box::leak(Box::new(Pubkey::new_unique()));
+        let owner = Box::leak(Box::new(Pubkey::default()));
+        let lamports = Box::leak(Box::new(0u64));
+        let data = Box::leak(Vec::new().into_boxed_slice());
         AccountInfo::new(
-            &key, is_signer, false, &mut lamports, &mut data, &Pubkey::default(), false, Epoch::default()
+            key,
+            is_signer,
+            false,
+            lamports,
+            data,
+            owner,
+            false,
+            Epoch::default(),
         )
     }
 
@@ -633,24 +642,27 @@ mod tests {
 
     #[test]
     fn test_init_open_orders_valid() {
-        let mut pda = OpenOrdersPda { bump: 1, bump_init: 2 };
+        let pda = OpenOrdersPda { bump: 1, bump_init: 2 };
         let program_id = Pubkey::new_unique();
         let dex_program_id = Pubkey::new_unique();
-        // Account 1 is signer
-        let accounts: Vec<_> = (0..6).map(|i| dummy_account(Pubkey::new_unique(), i == 1)).collect();
+        // Provide 7 accounts: after skipping 2, 5 remain.
+        // The 2nd account after skipping (index 1) must be a signer, so set original index 3 as signer.
+        let accounts: Vec<_> = (0..7)
+            .map(|i| dummy_account(i == 3))
+            .collect();
         let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
         assert!(pda.init_open_orders(&mut ctx).is_ok());
-        // Seeds should be set
         assert_eq!(ctx.seeds.len(), 2);
     }
 
     #[test]
     fn test_init_open_orders_missing_signer() {
-        let mut pda = OpenOrdersPda { bump: 1, bump_init: 2 };
+        let pda = OpenOrdersPda { bump: 1, bump_init: 2 };
         let program_id = Pubkey::new_unique();
         let dex_program_id = Pubkey::new_unique();
-        // No account is signer
-        let accounts: Vec<_> = (0..6).map(|_| dummy_account(Pubkey::new_unique(), false)).collect();
+        let accounts: Vec<_> = (0..6)
+            .map(|_| dummy_account(false))
+            .collect();
         let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
         assert!(pda.init_open_orders(&mut ctx).is_err());
     }
@@ -660,9 +672,10 @@ mod tests {
         let logger = Logger;
         let program_id = Pubkey::new_unique();
         let dex_program_id = Pubkey::new_unique();
-        let accounts: Vec<_> = (0..6).map(|i| dummy_account(Pubkey::new_unique(), i == 1)).collect();
+        let accounts: Vec<_> = (0..6)
+            .map(|i| dummy_account(i == 1))
+            .collect();
         let mut ctx = Context::new(&program_id, &dex_program_id, accounts);
-        // Should not panic
         assert!(logger.init_open_orders(&mut ctx).is_ok());
         let mut ix = NewOrderInstructionV3 {
             side: Side::Bid,

@@ -222,3 +222,177 @@ impl<'a> MarketProxy<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_program::pubkey::Pubkey;
+    use solana_program::account_info::AccountInfo;
+    use solana_program::clock::Epoch;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::convert::TryInto;
+    use serum_dex::matching::Side;
+
+    fn dummy_account(is_signer: bool) -> AccountInfo<'static> {
+        let key = Box::leak(Box::new(Pubkey::new_unique()));
+        let owner = Box::leak(Box::new(Pubkey::default()));
+        let lamports = Box::leak(Box::new(0u64));
+        let data = Box::leak(Vec::new().into_boxed_slice());
+        AccountInfo::new(
+            key,
+            is_signer,
+            false,
+            lamports,
+            data,
+            owner,
+            false,
+            Epoch::default(),
+        )
+    }
+
+    struct CallTracker {
+        pub called: Rc<RefCell<Vec<&'static str>>>,
+    }
+    impl CallTracker {
+        fn new() -> Self {
+            Self { called: Rc::new(RefCell::new(vec![])) }
+        }
+    }
+    impl MarketMiddleware for CallTracker {
+        fn instruction(&mut self, _data: &mut &[u8]) -> ProgramResult {
+            self.called.borrow_mut().push("instruction");
+            Ok(())
+        }
+        fn init_open_orders(&self, _ctx: &mut Context) -> ProgramResult {
+            self.called.borrow_mut().push("init_open_orders");
+            Ok(())
+        }
+        fn new_order_v3(&self, _ctx: &mut Context, _ix: &mut NewOrderInstructionV3) -> ProgramResult {
+            self.called.borrow_mut().push("new_order_v3");
+            Ok(())
+        }
+        fn fallback(&self, _ctx: &mut Context) -> ProgramResult {
+            self.called.borrow_mut().push("fallback");
+            Ok(())
+        }
+    }
+
+    fn make_accounts(n: usize, signer_idx: Option<usize>) -> Vec<AccountInfo<'static>> {
+        (0..n).map(|i| dummy_account(signer_idx == Some(i))).collect()
+    }
+
+    #[test]
+    fn test_dispatch_init_open_orders() {
+        let mut mw = CallTracker::new();
+        let proxy = MarketProxy::new().middleware(&mut mw);
+        let program_id = Pubkey::new_unique();
+        let mut accounts = vec![
+            // 0: DEX program (must match SERUM_DEX_PROGRAM_ID)
+            AccountInfo::new(
+                &SERUM_DEX_PROGRAM_ID,
+                false,
+                false,
+                Box::leak(Box::new(0u64)),
+                Box::leak(Vec::new().into_boxed_slice()),
+                Box::leak(Box::new(Pubkey::default())),
+                false,
+                Epoch::default(),
+            ),
+        ];
+        accounts.extend(make_accounts(4, Some(1))); // 4 more accounts, 1 is signer
+        let data = MarketInstruction::InitOpenOrders.pack();
+        let result = proxy.run(&program_id, &accounts, &data);
+        assert!(result.is_ok());
+        let calls = mw.called.borrow();
+        assert!(calls.contains(&"instruction"));
+        assert!(calls.contains(&"init_open_orders"));
+    }
+
+    #[test]
+    fn test_dispatch_new_order_v3() {
+        let mut mw = CallTracker::new();
+        let proxy = MarketProxy::new().middleware(&mut mw);
+        let program_id = Pubkey::new_unique();
+        let mut accounts = vec![
+            AccountInfo::new(
+                &SERUM_DEX_PROGRAM_ID,
+                false,
+                false,
+                Box::leak(Box::new(0u64)),
+                Box::leak(Vec::new().into_boxed_slice()),
+                Box::leak(Box::new(Pubkey::default())),
+                false,
+                Epoch::default(),
+            ),
+        ];
+        accounts.extend(make_accounts(12, Some(1)));
+        let ix = NewOrderInstructionV3 {
+            side: Side::Bid,
+            limit_price: 1u64.try_into().unwrap(),
+            max_coin_qty: 1u64.try_into().unwrap(),
+            max_native_pc_qty_including_fees: 1u64.try_into().unwrap(),
+            self_trade_behavior: serum_dex::instruction::SelfTradeBehavior::AbortTransaction,
+            order_type: serum_dex::matching::OrderType::Limit,
+            client_order_id: 0,
+            limit: 1,
+            max_ts: 0,
+        };
+        let data = MarketInstruction::NewOrderV3(ix).pack();
+        let result = proxy.run(&program_id, &accounts, &data);
+        assert!(result.is_ok());
+        let calls = mw.called.borrow();
+        assert!(calls.contains(&"instruction"));
+        assert!(calls.contains(&"new_order_v3"));
+    }
+
+    #[test]
+    fn test_fallback_dispatch() {
+        let mut mw = CallTracker::new();
+        let proxy = MarketProxy::new().middleware(&mut mw);
+        let program_id = Pubkey::new_unique();
+        let mut accounts = vec![
+            AccountInfo::new(
+                &SERUM_DEX_PROGRAM_ID,
+                false,
+                false,
+                Box::leak(Box::new(0u64)),
+                Box::leak(Vec::new().into_boxed_slice()),
+                Box::leak(Box::new(Pubkey::default())),
+                false,
+                Epoch::default(),
+            ),
+        ];
+        accounts.extend(make_accounts(2, Some(1)));
+        // Use an invalid instruction (empty data)
+        let data = vec![];
+        let result = proxy.run(&program_id, &accounts, &data);
+        assert!(result.is_ok());
+        let calls = mw.called.borrow();
+        assert!(calls.contains(&"instruction"));
+        assert!(calls.contains(&"fallback"));
+    }
+
+    #[test]
+    fn test_account_count_validation() {
+        let mut mw = CallTracker::new();
+        let proxy = MarketProxy::new().middleware(&mut mw);
+        let program_id = Pubkey::new_unique();
+        let mut accounts = vec![
+            AccountInfo::new(
+                &SERUM_DEX_PROGRAM_ID,
+                false,
+                false,
+                Box::leak(Box::new(0u64)),
+                Box::leak(Vec::new().into_boxed_slice()),
+                Box::leak(Box::new(Pubkey::default())),
+                false,
+                Epoch::default(),
+            ),
+        ];
+        accounts.extend(make_accounts(3, Some(1))); // Not enough for InitOpenOrders (needs 4)
+        let data = MarketInstruction::InitOpenOrders.pack();
+        let result = proxy.run(&program_id, &accounts, &data);
+        assert!(result.is_err());
+    }
+}
